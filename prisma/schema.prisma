@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum RuleType {
+  flat
+  free_over
+  by_zone
+  by_weight
+}
+
+// How much shipping costs (§6.9). Active rules are tried in priority order
+// (lowest first); the first that matches decides the charge. The config
+// shapes are in src/shipping/rules.ts. The first migration adds today's flat
+// ₹70.
+model ShippingRule {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(120)
+  type      RuleType
+  config    Json
+  priority  Int      @default(100)
+  active    Boolean  @default(true)
+  version   Int      @default(1)
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, priority])
+}
+
+// The provider's answer for a PIN code, reused for PINCODE_CACHE_HOURS.
+model PincodeCache {
+  pincode      String   @id @db.Char(6)
+  serviceable  Boolean
+  codAvailable Boolean
+  minDays      Int?
+  maxDays      Int?
+  provider     String   @db.VarChar(32)
+  checkedAt    DateTime
+}
+
+// Shiprocket's API token (valid for 10 days), encrypted, so every replica
+// and restart reuses it instead of logging in again.
+model ProviderToken {
+  provider  String   @id @db.VarChar(32)
+  token     String   @db.Text
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+}
+
+// Every admin write (§10).
+model AuditLog {
+  id      String   @id @default(uuid())
+  actorId String?
+  action  String   @db.VarChar(64)
+  target  String?
+  at      DateTime @default(now())
+  meta    Json?
+
+  @@index([target])
+  @@index([at])
+}

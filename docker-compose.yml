@@ -1,0 +1,57 @@
+# shipping-service with its own database.
+#   docker network create tej-net        # once per machine, shared by all services
+#   docker compose up --build
+# Service: http://localhost:4008 (the store reaches it through the api-gateway;
+# cart-service and order-service call it over tej-net). It uses the mock
+# courier unless .env sets SHIPPING_PROVIDER=shiprocket and the API user.
+#
+# For hot reload, run only the database here and the service on your machine:
+#   docker compose up mysql
+#   pnpm dev
+name: tej-shipping
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "3312:3306" # 3312 on the host; auth 3307, catalog 3308, inventory 3309, cart 3310, promotion 3311
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  shipping-service:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: development
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      MYSQL_USER: shipping
+      MYSQL_PASSWORD: shipping
+      MYSQL_DATABASE: shipping
+      AUTH_JWKS_URL: http://auth-service:4001/internal/.well-known/jwks.json
+    ports:
+      - "4008:4008"
+    networks:
+      - default
+      - tej-net # the api-gateway and cart-service reach it here as http://shipping-service:4008
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  tej-net:
+    external: true
+
+volumes:
+  mysql-data:
